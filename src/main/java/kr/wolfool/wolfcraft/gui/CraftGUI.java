@@ -19,13 +19,46 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.*;
 
+/**
+ * AddCook-style crafting GUI.
+ *
+ * Layout (6 rows = 54 slots):
+ * Row 0: [CAT_SCROLL] [R01] [R02] [R03] [R04] [R05] [ ] [BOOK] [OUTPUT]
+ * Row 1: [CAT_SCROLL] [R06] [R07] [R08] [R09] [R10] [ ] [ ->] [HAMMER]
+ * Row 2: [CAT_SCROLL] [R11] [R12] [R13] [R14] [R15] [ ] [ ]  [ ]
+ * Row 3: [CAT_SCROLL] [R16] [R17] [R18] [R19] [R20] [ ] [ ]  [ ]
+ * Row 4: [CAT_SCROLL] [R21] [R22] [R23] [R24] [R25] [ ] [ ]  [ ]
+ * Row 5: [PAGE<]  [Q1 ] [Q2 ] [Q3 ] [Q4 ] [Q5 ] [Q6] [Q7] [PAGE>]
+ */
 public class CraftGUI implements Listener {
 
     private final WolfCraft plugin;
     private final MiniMessage mm = MiniMessage.miniMessage();
-    private static final String MAIN_TITLE = "🔨 제작대";
-    private static final String CAT_PREFIX = "제작 - ";
-    private static final String QUEUE_TITLE = "⏰ 제작 대기열";
+
+    // Player state
+    private final Map<UUID, String> playerCategory = new HashMap<>();
+    private final Map<UUID, Integer> playerPage = new HashMap<>();
+    private final Map<UUID, CraftRecipe> playerSelected = new HashMap<>();
+
+    private static final String GUI_TITLE = "⚒ 제작대";
+    private static final int GUI_SIZE = 54;
+
+    // Slot positions
+    private static final int[] CATEGORY_SLOTS = {0, 9, 18, 27, 36};
+    private static final int[] RECIPE_SLOTS = {
+            1, 2, 3, 4, 5,
+            10, 11, 12, 13, 14,
+            19, 20, 21, 22, 23,
+            28, 29, 30, 31, 32,
+            37, 38, 39, 40, 41
+    };
+    private static final int BOOK_SLOT = 7;
+    private static final int OUTPUT_SLOT = 8;
+    private static final int ARROW_SLOT = 16;
+    private static final int HAMMER_SLOT = 17;
+    private static final int[] QUEUE_SLOTS = {46, 47, 48, 49, 50, 51, 52};
+    private static final int PAGE_PREV = 45;
+    private static final int PAGE_NEXT = 53;
 
     public CraftGUI(WolfCraft plugin) {
         this.plugin = plugin;
@@ -33,168 +66,161 @@ public class CraftGUI implements Listener {
     }
 
     /**
-     * Open main category selection.
+     * Open crafting table GUI for a player.
      */
-    public void openMain(Player player) {
-        Inventory gui = Bukkit.createInventory(null, 9, Component.text(MAIN_TITLE));
-
-        // Categories
-        var catSection = plugin.getConfig().getConfigurationSection("categories");
-        if (catSection != null) {
-            for (String cat : catSection.getKeys(false)) {
-                int slot = catSection.getInt(cat + ".slot", 0);
-                Material mat;
-                try {
-                    mat = Material.valueOf(catSection.getString(cat + ".material", "CHEST").toUpperCase());
-                } catch (Exception e) { mat = Material.CHEST; }
-
-                long count = plugin.getRecipes().values().stream()
-                        .filter(r -> r.getCategory().equals(cat)).count();
-
-                ItemStack item = new ItemStack(mat);
-                ItemMeta meta = item.getItemMeta();
-                meta.displayName(Component.text(cat, NamedTextColor.GOLD)
-                        .decoration(TextDecoration.ITALIC, false));
-                meta.lore(List.of(
-                        Component.text(count + "개의 레시피", NamedTextColor.GRAY)
-                                .decoration(TextDecoration.ITALIC, false),
-                        Component.text("▶ 클릭하여 열기", NamedTextColor.YELLOW)
-                                .decoration(TextDecoration.ITALIC, false)
-                ));
-                item.setItemMeta(meta);
-                gui.setItem(slot, item);
+    public void open(Player player) {
+        UUID uuid = player.getUniqueId();
+        if (!playerCategory.containsKey(uuid)) {
+            // Default to first category
+            var cats = plugin.getCategories();
+            if (!cats.isEmpty()) {
+                playerCategory.put(uuid, cats.keySet().iterator().next());
             }
         }
+        playerPage.putIfAbsent(uuid, 0);
 
-        // Queue button
-        ItemStack queueBtn = new ItemStack(Material.CLOCK);
-        ItemMeta qMeta = queueBtn.getItemMeta();
-        int queueSize = plugin.getCraftManager().getQueue(player.getUniqueId()).size();
-        qMeta.displayName(Component.text("⏰ 제작 대기열 (" + queueSize + ")", NamedTextColor.AQUA)
-                .decoration(TextDecoration.ITALIC, false));
-        queueBtn.setItemMeta(qMeta);
-        gui.setItem(7, queueBtn);
-
-        player.openInventory(gui);
+        render(player);
     }
 
-    /**
-     * Open category recipe list.
-     */
-    public void openCategory(Player player, String category) {
-        Inventory gui = Bukkit.createInventory(null, 54, Component.text(CAT_PREFIX + category));
-        int slot = 0;
+    private void render(Player player) {
+        UUID uuid = player.getUniqueId();
+        String category = playerCategory.getOrDefault(uuid, "");
+        int page = playerPage.getOrDefault(uuid, 0);
+        CraftRecipe selected = playerSelected.get(uuid);
 
-        for (CraftRecipe recipe : plugin.getRecipes().values()) {
-            if (!recipe.getCategory().equals(category)) continue;
-            if (slot >= 45) break;
+        Inventory gui = Bukkit.createInventory(null, GUI_SIZE, Component.text(GUI_TITLE));
 
+        // Fill background with dark panes
+        ItemStack bg = createItem(Material.GRAY_STAINED_GLASS_PANE, " ", null);
+        for (int i = 0; i < GUI_SIZE; i++) gui.setItem(i, bg);
+
+        // === CATEGORIES (left column) ===
+        int catIdx = 0;
+        for (var entry : plugin.getCategories().entrySet()) {
+            if (catIdx >= CATEGORY_SLOTS.length) break;
+            String catName = entry.getKey();
+            Material catMat = entry.getValue();
+            boolean isSelected = catName.equals(category);
+
+            ItemStack catItem = createItem(
+                    catMat,
+                    (isSelected ? "§a▶ " : "§7") + catName,
+                    isSelected ? List.of("§e현재 선택됨") : List.of("§7클릭하여 선택")
+            );
+            gui.setItem(CATEGORY_SLOTS[catIdx], catItem);
+            catIdx++;
+        }
+
+        // === RECIPE GRID (5x5) ===
+        List<CraftRecipe> catRecipes = plugin.getRecipes().values().stream()
+                .filter(r -> r.getCategory().equals(category))
+                .toList();
+
+        int startIdx = page * RECIPE_SLOTS.length;
+        for (int i = 0; i < RECIPE_SLOTS.length; i++) {
+            int recipeIdx = startIdx + i;
+            if (recipeIdx >= catRecipes.size()) {
+                gui.setItem(RECIPE_SLOTS[i], createItem(Material.LIGHT_GRAY_STAINED_GLASS_PANE, " ", null));
+                continue;
+            }
+
+            CraftRecipe recipe = catRecipes.get(recipeIdx);
             boolean hasPerm = player.hasPermission(recipe.getPermission());
-            ItemStack item = new ItemStack(hasPerm ? recipe.getGuiMaterial() : Material.GRAY_DYE);
-            ItemMeta meta = item.getItemMeta();
+            boolean isSelected = selected != null && selected.getId().equals(recipe.getId());
 
-            meta.displayName(mm.deserialize(recipe.getDisplay())
-                    .decoration(TextDecoration.ITALIC, false));
-
-            List<Component> lore = new ArrayList<>();
-            lore.add(Component.empty());
-            lore.add(Component.text("재료:", NamedTextColor.YELLOW)
-                    .decoration(TextDecoration.ITALIC, false));
-            for (var entry : recipe.getIngredients().entrySet()) {
-                String matName = entry.getKey().name().toLowerCase().replace("_", " ");
-                int has = countMaterial(player, entry.getKey());
-                NamedTextColor color = has >= entry.getValue() ? NamedTextColor.GREEN : NamedTextColor.RED;
-                lore.add(Component.text("  " + matName + ": " + has + "/" + entry.getValue(), color)
-                        .decoration(TextDecoration.ITALIC, false));
-            }
-            lore.add(Component.empty());
-            lore.add(Component.text("⏱ 제작 시간: " + recipe.getTime() + "초", NamedTextColor.GRAY)
-                    .decoration(TextDecoration.ITALIC, false));
-            if (recipe.getExpCost() > 0) {
-                lore.add(Component.text("✨ 경험치: " + recipe.getExpCost() + "레벨", NamedTextColor.GREEN)
-                        .decoration(TextDecoration.ITALIC, false));
-            }
-            lore.add(Component.empty());
+            Material displayMat = hasPerm ? recipe.getGuiMaterial() : Material.BARRIER;
+            List<String> lore = new ArrayList<>();
+            lore.add("");
             if (hasPerm) {
-                lore.add(Component.text("▶ 클릭하여 제작", NamedTextColor.YELLOW)
-                        .decoration(TextDecoration.ITALIC, false));
-            } else {
-                lore.add(Component.text("✖ 권한 없음", NamedTextColor.RED)
-                        .decoration(TextDecoration.ITALIC, false));
-            }
-
-            meta.lore(lore);
-            item.setItemMeta(meta);
-            gui.setItem(slot, item);
-            slot++;
-        }
-
-        // Back button
-        ItemStack back = new ItemStack(Material.ARROW);
-        ItemMeta backMeta = back.getItemMeta();
-        backMeta.displayName(Component.text("← 돌아가기", NamedTextColor.RED)
-                .decoration(TextDecoration.ITALIC, false));
-        back.setItemMeta(backMeta);
-        gui.setItem(49, back);
-
-        player.openInventory(gui);
-    }
-
-    /**
-     * Open crafting queue.
-     */
-    public void openQueue(Player player) {
-        Inventory gui = Bukkit.createInventory(null, 27, Component.text(QUEUE_TITLE));
-
-        List<CraftTask> queue = plugin.getCraftManager().getQueue(player.getUniqueId());
-        for (int i = 0; i < queue.size() && i < 9; i++) {
-            CraftTask task = queue.get(i);
-
-            ItemStack item;
-            if (task.isFinished()) {
-                item = task.getResult().clone();
-                ItemMeta meta = item.getItemMeta();
-                List<Component> lore = meta.lore() != null ? new ArrayList<>(meta.lore()) : new ArrayList<>();
-                lore.add(Component.empty());
-                lore.add(Component.text("✅ 완료! 클릭하여 수령", NamedTextColor.GREEN)
-                        .decoration(TextDecoration.ITALIC, false));
-                meta.lore(lore);
-                item.setItemMeta(meta);
-            } else {
-                // Progress bar
-                int remaining = task.getRemainingSeconds();
-                double progress = task.getProgress();
-                int bars = (int) (progress * 20);
-                StringBuilder progressBar = new StringBuilder();
-                for (int b = 0; b < 20; b++) {
-                    progressBar.append(b < bars ? "█" : "░");
+                // Show ingredient summary
+                for (var ing : recipe.getIngredients().entrySet()) {
+                    int has = countMaterial(player, ing.getKey());
+                    String color = has >= ing.getValue() ? "§a" : "§c";
+                    lore.add(color + formatMat(ing.getKey()) + ": " + has + "/" + ing.getValue());
                 }
-
-                item = new ItemStack(Material.CLOCK);
-                ItemMeta meta = item.getItemMeta();
-                meta.displayName(mm.deserialize(task.getRecipeDisplay())
-                        .decoration(TextDecoration.ITALIC, false));
-                meta.lore(List.of(
-                        Component.empty(),
-                        Component.text(progressBar.toString(), NamedTextColor.GREEN)
-                                .decoration(TextDecoration.ITALIC, false),
-                        Component.text("남은 시간: " + remaining + "초", NamedTextColor.GRAY)
-                                .decoration(TextDecoration.ITALIC, false),
-                        Component.text(String.format("%.0f%%", progress * 100), NamedTextColor.YELLOW)
-                                .decoration(TextDecoration.ITALIC, false)
-                ));
-                item.setItemMeta(meta);
+                lore.add("");
+                lore.add("§7⏱ " + recipe.getTime() + "초");
+                if (recipe.getExpCost() > 0) lore.add("§a✨ " + recipe.getExpCost() + " 레벨");
+                lore.add("");
+                lore.add(isSelected ? "§a✔ 선택됨" : "§e▶ 클릭하여 선택");
+            } else {
+                lore.add("§c✖ 권한 없음");
             }
-            gui.setItem(i + 9, item);
+
+            String name = (isSelected ? "§b§l▶ " : "§f") + recipe.getDisplay();
+            // Strip minimessage tags for inventory name
+            name = name.replaceAll("<[^>]+>", "");
+
+            gui.setItem(RECIPE_SLOTS[i], createItem(displayMat, name, lore));
         }
 
-        // Back button
-        ItemStack back = new ItemStack(Material.ARROW);
-        ItemMeta bm = back.getItemMeta();
-        bm.displayName(Component.text("← 돌아가기", NamedTextColor.RED)
-                .decoration(TextDecoration.ITALIC, false));
-        back.setItemMeta(bm);
-        gui.setItem(22, back);
+        // === BOOK (recipe detail) ===
+        gui.setItem(BOOK_SLOT, createItem(Material.KNOWLEDGE_BOOK, "§a📖 레시피 보기",
+                selected != null ? List.of("§7선택된 레시피의 상세 정보") : List.of("§7레시피를 먼저 선택하세요")));
+
+        // === OUTPUT PREVIEW ===
+        if (selected != null) {
+            ItemStack result = selected.buildResult();
+            gui.setItem(OUTPUT_SLOT, result);
+
+            // Arrow
+            gui.setItem(ARROW_SLOT, createItem(Material.ARROW, "§7→", null));
+
+            // Hammer (craft button)
+            boolean canCraft = canCraft(player, selected);
+            gui.setItem(HAMMER_SLOT, createItem(
+                    canCraft ? Material.ANVIL : Material.BARRIER,
+                    canCraft ? "§6§l⚒ 제작하기!" : "§c⚒ 제작 불가",
+                    canCraft ? List.of("§e클릭하여 제작 시작") : List.of("§c재료 또는 경험치 부족")
+            ));
+        } else {
+            gui.setItem(OUTPUT_SLOT, createItem(Material.LIGHT_GRAY_STAINED_GLASS_PANE, "§7결과물", List.of("§7레시피를 선택하세요")));
+            gui.setItem(HAMMER_SLOT, createItem(Material.LIGHT_GRAY_STAINED_GLASS_PANE, "§7⚒ 제작", List.of("§7레시피를 선택하세요")));
+        }
+
+        // === QUEUE (bottom row) ===
+        List<CraftTask> queue = plugin.getCraftManager().getQueue(player.getUniqueId());
+        for (int i = 0; i < QUEUE_SLOTS.length; i++) {
+            if (i < queue.size()) {
+                CraftTask task = queue.get(i);
+                if (task.isFinished()) {
+                    ItemStack qItem = task.getResult().clone();
+                    ItemMeta qm = qItem.getItemMeta();
+                    List<Component> lore2 = qm.lore() != null ? new ArrayList<>(qm.lore()) : new ArrayList<>();
+                    lore2.add(Component.empty());
+                    lore2.add(Component.text("✅ 완료! 클릭하여 수령", NamedTextColor.GREEN)
+                            .decoration(TextDecoration.ITALIC, false));
+                    qm.lore(lore2);
+                    qItem.setItemMeta(qm);
+                    gui.setItem(QUEUE_SLOTS[i], qItem);
+                } else {
+                    double progress = task.getProgress();
+                    int bars = (int) (progress * 16);
+                    StringBuilder pb = new StringBuilder();
+                    for (int b = 0; b < 16; b++) pb.append(b < bars ? "§a█" : "§8░");
+
+                    String taskName = task.getRecipeDisplay().replaceAll("<[^>]+>", "");
+                    gui.setItem(QUEUE_SLOTS[i], createItem(Material.CLOCK,
+                            "§e⏳ " + taskName,
+                            List.of("", pb.toString(),
+                                    "§7남은 시간: §f" + task.getRemainingSeconds() + "초",
+                                    "§7진행: §f" + String.format("%.0f%%", progress * 100))
+                    ));
+                }
+            } else {
+                gui.setItem(QUEUE_SLOTS[i], createItem(Material.LIGHT_GRAY_STAINED_GLASS_PANE,
+                        "§8대기열 슬롯", List.of("§7비어있음")));
+            }
+        }
+
+        // === PAGE BUTTONS ===
+        int totalPages = (int) Math.ceil((double) catRecipes.size() / RECIPE_SLOTS.length);
+        if (page > 0) {
+            gui.setItem(PAGE_PREV, createItem(Material.ARROW, "§a◀ 이전 페이지", List.of("§7페이지 " + page + "/" + totalPages)));
+        }
+        if (page < totalPages - 1) {
+            gui.setItem(PAGE_NEXT, createItem(Material.ARROW, "§a다음 페이지 ▶", List.of("§7페이지 " + (page + 2) + "/" + totalPages)));
+        }
 
         player.openInventory(gui);
     }
@@ -205,62 +231,153 @@ public class CraftGUI implements Listener {
 
         String title = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
                 .plainText().serialize(event.getView().title());
+        if (!title.equals(GUI_TITLE)) return;
 
-        // Main menu
-        if (title.equals(MAIN_TITLE)) {
-            event.setCancelled(true);
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
+        event.setCancelled(true);
+        int slot = event.getRawSlot();
+        if (slot < 0 || slot >= GUI_SIZE) return;
+        UUID uuid = player.getUniqueId();
 
-            if (clicked.getType() == Material.CLOCK) {
-                openQueue(player);
+        // Category click
+        for (int i = 0; i < CATEGORY_SLOTS.length; i++) {
+            if (slot == CATEGORY_SLOTS[i]) {
+                int catIdx = 0;
+                for (String catName : plugin.getCategories().keySet()) {
+                    if (catIdx == i) {
+                        playerCategory.put(uuid, catName);
+                        playerPage.put(uuid, 0);
+                        playerSelected.remove(uuid);
+                        render(player);
+                        return;
+                    }
+                    catIdx++;
+                }
                 return;
             }
-
-            ItemMeta meta = clicked.getItemMeta();
-            if (meta == null || !meta.hasDisplayName()) return;
-            String catName = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
-                    .plainText().serialize(meta.displayName());
-            openCategory(player, catName);
-            return;
         }
 
-        // Category menu
-        if (title.startsWith(CAT_PREFIX)) {
-            event.setCancelled(true);
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            if (clicked.getType() == Material.ARROW) { openMain(player); return; }
-            if (clicked.getType() == Material.GRAY_DYE) return;
-
-            String category = title.substring(CAT_PREFIX.length());
-            int slot = event.getSlot();
-            int index = 0;
-            for (CraftRecipe recipe : plugin.getRecipes().values()) {
-                if (!recipe.getCategory().equals(category)) continue;
-                if (index == slot) {
-                    player.closeInventory();
-                    plugin.getCraftManager().startCraft(player, recipe);
-                    return;
+        // Recipe click
+        for (int i = 0; i < RECIPE_SLOTS.length; i++) {
+            if (slot == RECIPE_SLOTS[i]) {
+                String category = playerCategory.getOrDefault(uuid, "");
+                List<CraftRecipe> catRecipes = plugin.getRecipes().values().stream()
+                        .filter(r -> r.getCategory().equals(category)).toList();
+                int page = playerPage.getOrDefault(uuid, 0);
+                int recipeIdx = page * RECIPE_SLOTS.length + i;
+                if (recipeIdx < catRecipes.size()) {
+                    CraftRecipe recipe = catRecipes.get(recipeIdx);
+                    if (player.hasPermission(recipe.getPermission())) {
+                        playerSelected.put(uuid, recipe);
+                        render(player);
+                    }
                 }
-                index++;
+                return;
+            }
+        }
+
+        // Hammer click (craft)
+        if (slot == HAMMER_SLOT) {
+            CraftRecipe selected = playerSelected.get(uuid);
+            if (selected != null && canCraft(player, selected)) {
+                plugin.getCraftManager().startCraft(player, selected);
+                render(player);
             }
             return;
         }
 
-        // Queue menu
-        if (title.equals(QUEUE_TITLE)) {
-            event.setCancelled(true);
-            ItemStack clicked = event.getCurrentItem();
-            if (clicked == null || clicked.getType() == Material.AIR) return;
-            if (clicked.getType() == Material.ARROW) { openMain(player); return; }
+        // Book click (recipe detail)
+        if (slot == BOOK_SLOT) {
+            CraftRecipe selected = playerSelected.get(uuid);
+            if (selected != null) {
+                showRecipeDetail(player, selected);
+            }
+            return;
+        }
 
-            int queueIndex = event.getSlot() - 9;
-            if (queueIndex >= 0) {
-                plugin.getCraftManager().collectTask(player, queueIndex);
-                openQueue(player); // Refresh
+        // Queue click (collect)
+        for (int i = 0; i < QUEUE_SLOTS.length; i++) {
+            if (slot == QUEUE_SLOTS[i]) {
+                List<CraftTask> queue = plugin.getCraftManager().getQueue(uuid);
+                if (i < queue.size() && queue.get(i).isFinished()) {
+                    plugin.getCraftManager().collectTask(player, i);
+                    render(player);
+                }
+                return;
             }
         }
+
+        // Page buttons
+        if (slot == PAGE_PREV) {
+            int page = playerPage.getOrDefault(uuid, 0);
+            if (page > 0) {
+                playerPage.put(uuid, page - 1);
+                render(player);
+            }
+            return;
+        }
+        if (slot == PAGE_NEXT) {
+            int page = playerPage.getOrDefault(uuid, 0);
+            playerPage.put(uuid, page + 1);
+            render(player);
+        }
+    }
+
+    private void showRecipeDetail(Player player, CraftRecipe recipe) {
+        Inventory detail = Bukkit.createInventory(null, 27, Component.text("📖 " + recipe.getDisplay().replaceAll("<[^>]+>", "")));
+
+        // Fill background
+        ItemStack bg = createItem(Material.BLACK_STAINED_GLASS_PANE, " ", null);
+        for (int i = 0; i < 27; i++) detail.setItem(i, bg);
+
+        // Ingredients (left side)
+        int slot = 0;
+        for (var entry : recipe.getIngredients().entrySet()) {
+            if (slot > 5) break;
+            int has = countMaterial(player, entry.getKey());
+            String color = has >= entry.getValue() ? "§a" : "§c";
+            ItemStack item = new ItemStack(entry.getKey(), entry.getValue());
+            ItemMeta meta = item.getItemMeta();
+            meta.displayName(Component.text(formatMat(entry.getKey()), NamedTextColor.WHITE)
+                    .decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(
+                    Component.text("필요: " + entry.getValue() + "개", NamedTextColor.YELLOW)
+                            .decoration(TextDecoration.ITALIC, false),
+                    Component.text("보유: " + has + "개",
+                            has >= entry.getValue() ? NamedTextColor.GREEN : NamedTextColor.RED)
+                            .decoration(TextDecoration.ITALIC, false)
+            ));
+            item.setItemMeta(meta);
+            detail.setItem(slot < 3 ? slot : slot + 6, item);
+            slot++;
+        }
+
+        // Arrow
+        detail.setItem(13, createItem(Material.ARROW, "§7→", null));
+
+        // Result
+        detail.setItem(15, recipe.buildResult());
+
+        // Info
+        detail.setItem(16, createItem(Material.PAPER, "§e정보",
+                List.of("§7⏱ 제작 시간: §f" + recipe.getTime() + "초",
+                        recipe.getExpCost() > 0 ? "§a✨ 경험치: §f" + recipe.getExpCost() + " 레벨" : "§7경험치 불필요")));
+
+        // Back button
+        detail.setItem(22, createItem(Material.BARRIER, "§c← 돌아가기", List.of("§7클릭하여 제작대로")));
+
+        player.openInventory(detail);
+    }
+
+    private boolean canCraft(Player player, CraftRecipe recipe) {
+        if (!player.hasPermission(recipe.getPermission())) return false;
+        if (player.getLevel() < recipe.getExpCost()) return false;
+        for (var entry : recipe.getIngredients().entrySet()) {
+            if (countMaterial(player, entry.getKey()) < entry.getValue()) return false;
+        }
+        int maxQueue = plugin.getConfig().getInt("max-queue", 3);
+        List<CraftTask> queue = plugin.getCraftManager().getQueue(player.getUniqueId());
+        long active = queue.stream().filter(t -> !t.isCompleted()).count();
+        return active < maxQueue;
     }
 
     private int countMaterial(Player player, Material material) {
@@ -269,5 +386,22 @@ public class CraftGUI implements Listener {
             if (is != null && is.getType() == material) count += is.getAmount();
         }
         return count;
+    }
+
+    private String formatMat(Material mat) {
+        return mat.name().toLowerCase().replace("_", " ");
+    }
+
+    private ItemStack createItem(Material material, String name, List<String> lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        meta.displayName(Component.text(name).decoration(TextDecoration.ITALIC, false));
+        if (lore != null) {
+            meta.lore(lore.stream()
+                    .map(l -> (Component) Component.text(l).decoration(TextDecoration.ITALIC, false))
+                    .toList());
+        }
+        item.setItemMeta(meta);
+        return item;
     }
 }

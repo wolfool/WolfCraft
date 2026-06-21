@@ -49,7 +49,7 @@ public class CraftCommand implements CommandExecutor, TabCompleter {
 
         // /craft queue
         if (args.length > 0 && args[0].equalsIgnoreCase("queue")) {
-            gui.openQueue(player);
+            gui.open(player);
             return true;
         }
 
@@ -62,7 +62,7 @@ public class CraftCommand implements CommandExecutor, TabCompleter {
             }
         }
 
-        gui.openMain(player);
+        gui.open(player);
         return true;
     }
 

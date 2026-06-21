@@ -16,12 +16,14 @@ public class WolfCraft extends JavaPlugin {
 
     private static WolfCraft instance;
     private final Map<String, CraftRecipe> recipes = new LinkedHashMap<>();
+    private final Map<String, Material> categories = new LinkedHashMap<>();
     private CraftManager craftManager;
 
     @Override
     public void onEnable() {
         instance = this;
         saveDefaultConfig();
+        loadCategories();
         loadRecipes();
 
         craftManager = new CraftManager(this);
@@ -108,8 +110,22 @@ public class WolfCraft extends JavaPlugin {
         getLogger().info(recipes.size() + "개의 레시피가 로드되었습니다.");
     }
 
+    private void loadCategories() {
+        categories.clear();
+        ConfigurationSection sec = getConfig().getConfigurationSection("categories");
+        if (sec == null) return;
+        for (String key : sec.getKeys(false)) {
+            Material mat;
+            try {
+                mat = Material.valueOf(sec.getString(key + ".material", "CHEST").toUpperCase());
+            } catch (Exception e) { mat = Material.CHEST; }
+            categories.put(key, mat);
+        }
+    }
+
     public void reload() {
         reloadConfig();
+        loadCategories();
         loadRecipes();
     }
 
@@ -119,5 +135,6 @@ public class WolfCraft extends JavaPlugin {
 
     public static WolfCraft getInstance() { return instance; }
     public Map<String, CraftRecipe> getRecipes() { return recipes; }
+    public Map<String, Material> getCategories() { return categories; }
     public CraftManager getCraftManager() { return craftManager; }
 }
