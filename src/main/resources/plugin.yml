@@ -1,0 +1,22 @@
+name: WolfCraft
+version: ${version}
+main: kr.wolfool.wolfcraft.WolfCraft
+api-version: '1.21'
+authors: [wolfool]
+description: Custom crafting system with time-based queue and GUI
+commands:
+  craft:
+    description: Open crafting menu
+    usage: /<command> [recipe]
+    aliases: [제작, wc]
+  craftadmin:
+    description: Admin commands
+    usage: /<command> <reload>
+    aliases: [wca]
+permissions:
+  wolfcraft.use:
+    description: Use crafting system
+    default: true
+  wolfcraft.admin:
+    description: Admin commands
+    default: op

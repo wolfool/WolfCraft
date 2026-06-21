@@ -1,0 +1,144 @@
+# WolfCraft Configuration
+
+# Maximum concurrent crafting queue per player
+max-queue: 3
+
+# Categories
+categories:
+  무기:
+    material: IRON_SWORD
+    slot: 1
+  방어구:
+    material: IRON_CHESTPLATE
+    slot: 2
+  도구:
+    material: IRON_PICKAXE
+    slot: 3
+  음식:
+    material: GOLDEN_APPLE
+    slot: 4
+  특수:
+    material: NETHER_STAR
+    slot: 5
+
+# Custom Recipes
+# ingredients: material:amount pairs
+# result: output item
+# time: crafting time in seconds
+# permission: required permission (empty = wolfcraft.use)
+# exp-cost: experience levels required
+recipes:
+  hardened_diamond_sword:
+    display: "<gradient:aqua:blue>강화된 다이아 검</gradient>"
+    category: 무기
+    ingredients:
+      DIAMOND: 5
+      BLAZE_ROD: 2
+      IRON_INGOT: 3
+    result:
+      material: DIAMOND_SWORD
+      name: "<gradient:aqua:blue>강화된 다이아 검</gradient>"
+      lore:
+        - ""
+        - "<gray>특수 제작된 강력한 검</gray>"
+        - "<yellow>공격력 +2</yellow>"
+      enchantments:
+        SHARPNESS: 3
+        UNBREAKING: 2
+    time: 30
+    permission: ""
+    exp-cost: 10
+    gui-material: DIAMOND_SWORD
+
+  reinforced_chestplate:
+    display: "<gold>강화 철 갑옷</gold>"
+    category: 방어구
+    ingredients:
+      IRON_INGOT: 12
+      DIAMOND: 2
+      LEATHER: 4
+    result:
+      material: IRON_CHESTPLATE
+      name: "<gold>강화 철 갑옷</gold>"
+      lore:
+        - ""
+        - "<gray>추가 방어력을 가진 갑옷</gray>"
+      enchantments:
+        PROTECTION: 3
+        UNBREAKING: 2
+    time: 45
+    permission: ""
+    exp-cost: 15
+    gui-material: IRON_CHESTPLATE
+
+  super_pickaxe:
+    display: "<green>초월 곡괭이</green>"
+    category: 도구
+    ingredients:
+      DIAMOND: 3
+      GOLD_INGOT: 5
+      STICK: 2
+    result:
+      material: DIAMOND_PICKAXE
+      name: "<green>초월 곡괭이</green>"
+      lore:
+        - ""
+        - "<gray>빠르게 채굴하는 곡괭이</gray>"
+      enchantments:
+        EFFICIENCY: 4
+        FORTUNE: 2
+        UNBREAKING: 3
+    time: 60
+    permission: ""
+    exp-cost: 20
+    gui-material: DIAMOND_PICKAXE
+
+  golden_feast:
+    display: "<yellow>황금 만찬</yellow>"
+    category: 음식
+    ingredients:
+      GOLDEN_APPLE: 1
+      COOKED_BEEF: 8
+      GOLDEN_CARROT: 4
+    result:
+      material: GOLDEN_APPLE
+      amount: 3
+      name: "<yellow>황금 만찬</yellow>"
+      lore:
+        - ""
+        - "<gray>풍성한 황금 사과 세트</gray>"
+    time: 20
+    permission: ""
+    exp-cost: 5
+    gui-material: GOLDEN_APPLE
+
+  totem_fragment:
+    display: "<dark_purple>토템 파편</dark_purple>"
+    category: 특수
+    ingredients:
+      EMERALD: 16
+      DIAMOND: 8
+      NETHER_STAR: 1
+      GOLD_BLOCK: 4
+    result:
+      material: TOTEM_OF_UNDYING
+      name: "<dark_purple>토템 파편</dark_purple>"
+      lore:
+        - ""
+        - "<gray>죽음을 한 번 막아주는 토템</gray>"
+    time: 120
+    permission: "wolfcraft.special"
+    exp-cost: 30
+    gui-material: TOTEM_OF_UNDYING
+
+# Messages
+messages:
+  crafting-started: "<green>🔨 '{recipe}' 제작을 시작합니다! ({time}초)</green>"
+  crafting-complete: "<gold>✅ '{recipe}' 제작 완료! /craft queue 에서 수령하세요.</gold>"
+  crafting-collected: "<green>아이템을 수령했습니다!</green>"
+  not-enough-ingredients: "<red>재료가 부족합니다!</red>"
+  not-enough-exp: "<red>경험치가 부족합니다! (필요: {exp}레벨)</red>"
+  queue-full: "<red>제작 대기열이 가득 찼습니다! (최대: {max}개)</red>"
+  queue-empty: "<gray>제작 중인 아이템이 없습니다.</gray>"
+  no-permission: "<red>이 레시피를 사용할 권한이 없습니다.</red>"
+  reloaded: "<green>WolfCraft 설정이 리로드되었습니다.</green>"
